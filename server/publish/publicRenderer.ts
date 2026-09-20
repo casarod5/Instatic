@@ -13,7 +13,7 @@ import { getPublishVersion } from './publishState'
 import type { Page } from '@core/page-tree'
 import type { DocumentMetaOverride, SiteCssBundle } from '@core/publisher'
 import type { PublishedDataRow } from '@core/data/schemas'
-import { readEntrySeoOverride } from '@core/data/cells'
+import { buildDataRowDocumentMeta, buildSiteDocumentMeta } from './seoDocumentMeta'
 import type { DbClient } from '../db/client'
 import type { PublishedPageSnapshot } from '../repositories/publish'
 
@@ -148,7 +148,12 @@ export async function renderPublishedSnapshot(
     ? { entryStack: [], route: buildRouteFrame(ctx.url.toString()) }
     : undefined
 
-  const rendered = await renderMergedTemplate(merged, snapshot, templateContext, ctx)
+  // Phase 1.5 (GRAAAAA-69): plain pages carry the site-level SEO surface —
+  // RSS feed discovery + the site LocalBusiness JSON-LD when the publisher
+  // identity is configured. Empty override when neither is set, so the
+  // rendered head is byte-identical to the pre-Phase-1.5 output.
+  const siteDocumentMeta = await buildSiteDocumentMeta(ctx)
+  const rendered = await renderMergedTemplate(merged, snapshot, templateContext, ctx, siteDocumentMeta)
   return { ...rendered, pageId: snapshot.pageRowId, slug: page.slug, siteId: snapshot.site.id }
 }
 
@@ -203,13 +208,16 @@ export async function renderPublishedDataRowTemplate(
     ...(ctx.url ? { route: buildRouteFrame(ctx.url.toString()) } : {}),
   }
 
-  const entryMeta = readEntrySeoOverride(row.cells, { rssFeedUrl: ctx.rssFeedUrl })
-  const documentMeta: DocumentMetaOverride = {
-    ...(entryMeta ?? {}),
-    // Blog posts are articles; other content tables (services, locations)
-    // stay `website`. This is the only data-row render path.
-    ogType: row.tableSlug === 'posts' ? 'article' : 'website',
-  }
+  // Phase 1.5 (GRAAAAA-69, plan D7): the full per-entry SEO surface —
+  // title/description/OG/Twitter/canonical (entry cell → template default
+  // → site settings fallback chain) plus the D7 JSON-LD set: LocalBusiness
+  // w/ NAP (per-city for City Landing rows), Service, FAQ, BreadcrumbList.
+  // This is the only data-row render path — bake and live serve share it.
+  const documentMeta = await buildDataRowDocumentMeta(
+    row,
+    ctx,
+    templateContext as unknown as Record<string, unknown>,
+  )
   const rendered = await renderMergedTemplate(merged, snapshot, templateContext, ctx, documentMeta)
   return { ...rendered, pageId: merged.id, slug: merged.slug, siteId: snapshot.site.id }
 }

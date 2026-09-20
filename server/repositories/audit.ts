@@ -32,6 +32,8 @@ const AuditActionSchema = Type.Union([
   Type.Literal('data.row.move'),
   Type.Literal('data.author.assign'),
   Type.Literal('publish'),
+  // Phase 1.5 (GRAAAAA-69) — SEO publish choreography outcome (CF purge / sitemap ping / manifest).
+  Type.Literal('site.publish.choreography'),
   // Branches — see `docs/features/branches.md`.
   Type.Literal('branch.create'),
   Type.Literal('branch.rename'),

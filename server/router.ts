@@ -9,6 +9,12 @@ import {
   tryServePublicRoute,
   trySetupRedirect,
 } from './publish/publicRoutes'
+import {
+  tryServeSiteRedirect,
+  tryServeSitemap,
+  tryServeRobots,
+  tryServeRss,
+} from './publish/seoRoutes'
 import type { DbClient } from './db/client'
 import type { RouteHandler, ServerRuntime } from './serverRuntime'
 import { readStaticAsset } from './publish/staticArtefact'
@@ -61,6 +67,15 @@ const routes: readonly RouteHandler[] = [
   // cookie, `/_instatic/preview/exit` clears it. Public GETs below then
   // render the branch's draft while the cookie names a live link.
   tryServeBranchPreviewLink,
+  // Phase 1.5 (GRAAAAA-69, plan D7) SEO & redirects public routes.
+  // tryServeSiteRedirect short-circuits any visitor GET whose path matches
+  // a row in `site_redirects`, returning a 301 ahead of the page renderer.
+  // The three artefact routes read the active publish slot when present
+  // and fall back to a live generation when not.
+  tryServeSiteRedirect,
+  tryServeSitemap,
+  tryServeRobots,
+  tryServeRss,
   tryServeLoopRuntimeAsset,
   tryServeLoop,
   tryServeHoleRuntimeAsset,
