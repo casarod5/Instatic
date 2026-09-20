@@ -19,14 +19,14 @@ import { nanoid } from 'nanoid'
 const { db } = createDbClient('sqlite:./.tmp/dev.db')
 
 // ---------------------------------------------------------------- helpers --
-type Node = { id: string; moduleId: string; props: Record<string, unknown>; breakpointOverrides: Record<string, never>; children: string[] }
+type Node = { id: string; moduleId: string; props: Record<string, unknown>; breakpointOverrides: Record<string, Record<string, unknown>>; children: string[] }
 const nodes: Record<string, Node> = {}
-function n(id: string, moduleId: string, props: Record<string, unknown> = {}, children: string[] = []): string {
-  nodes[id] = { id, moduleId, props, breakpointOverrides: [], children }
+function n(id: string, moduleId: string, props: Record<string, unknown> = {}, children: string[] = [], breakpointOverrides: Record<string, Record<string, unknown>> = {}): string {
+  nodes[id] = { id, moduleId, props, breakpointOverrides, children }
   return id
 }
 const txt = (id: string, text: string, tag = 'p', extra: Record<string, unknown> = {}) => n(id, 'base.text', { text, tag, ...extra })
-const ctn = (id: string, children: string[], extra: Record<string, unknown> = {}) => n(id, 'base.container', { ...extra }, children)
+const ctn = (id: string, children: string[], extra: Record<string, unknown> = {}, breakpointOverrides: Record<string, Record<string, unknown>> = {}) => n(id, 'base.container', { ...extra }, children, breakpointOverrides)
 const btn = (id: string, label: string, href: string) => n(id, 'base.button', { label, href })
 const lnk = (id: string, text: string, href: string) => n(id, 'base.link', { text, href })
 const img = (id: string, src: string, alt: string) => n(id, 'base.image', { src, alt })
@@ -49,9 +49,10 @@ function tokensNode(): string {
 function headerCells(componentIds: Record<string, string>) {
   resetNodes()
   const root = ctn('header-root', [tokensNode(), 'bar'])
-  const bar = ctn('bar', ['logo', 'nav', 'cta'])
+  const bar = ctn('bar', ['logo', 'nav-toggle', 'nav', 'cta'])
   txt('logo', 'Granite Brothers', 'span', { className: 'logo' })
-  const nav = ctn('nav', ['n1', 'n2', 'n3', 'n4', 'n5'])
+  btn('nav-toggle', '≡', '#', { className: 'nav-toggle', 'aria-label': 'Toggle navigation', 'aria-expanded': 'false', 'aria-controls': 'nav' })
+  const nav = ctn('nav', ['n1', 'n2', 'n3', 'n4', 'n5'], { className: 'nav-collapse' })
   lnk('n1', 'Home', '/'); lnk('n2', 'Services', '/services'); lnk('n3', 'Service Areas', '/areas')
   lnk('n4', 'About', '/about'); lnk('n5', 'Contact', '/contact')
   btn('cta', 'Get a Free Quote', '/contact')
@@ -137,6 +138,9 @@ function sectionCells(componentIds: Record<string, string>) {
       { id: nanoid(), name: 'content', type: 'slot', defaultValue: null, required: false, description: 'Nested content rendered inside the section' },
     ],
     classIds: [],
+    defaultBreakpointOverrides: {
+      mobile: { paddingY: 32 }
+    },
   }
 }
 
@@ -144,7 +148,7 @@ function cardGridCells(componentIds: Record<string, string>) {
   resetNodes()
   const root = ctn('grid-root', ['title', 'grid'])
   txt('title', 'Our Services', 'h2')
-  const grid = ctn('grid', ['c1', 'c2', 'c3'])
+  const grid = ctn('grid', ['c1', 'c2', 'c3'], {}, { mobile: { style: 'grid-template-columns: 1fr' } })
   const card = (pre: string, title: string, desc: string) => {
     const cardRoot = ctn(pre, [pre + '-img', pre + '-t', pre + '-d', pre + '-l'])
     img(pre + '-img', '/uploads/' + pre + '.jpg', title)
@@ -175,6 +179,9 @@ function cardGridCells(componentIds: Record<string, string>) {
       { id: nanoid(), name: 'card3Link', type: 'url', defaultValue: '/services', required: false },
     ],
     classIds: [],
+    defaultBreakpointOverrides: {
+      mobile: { style: 'grid-template-columns: 1fr' }
+    },
   }
 }
 
@@ -338,6 +345,19 @@ await seedTable('cities', 'Service Areas', 'Service Area', [
   { type: 'longText', id: 'seoDescription', label: 'SEO Description' },
 ], 'title')
 
+// Posts table for blog entries
+await seedTable('posts', 'Posts', 'Post', [
+  { type: 'text', id: 'title', label: 'Post Title', required: true },
+  { type: 'text', id: 'slug', label: 'Slug', required: true },
+  { type: 'richText', id: 'body', label: 'Post Content' },
+  { type: 'image', id: 'featuredImage', label: 'Featured Image' },
+  { type: 'text', id: 'excerpt', label: 'Excerpt' },
+  { type: 'text', id: 'author', label: 'Author' },
+  { type: 'text', id: 'publishedAt', label: 'Published At' },
+  { type: 'text', id: 'seoTitle', label: 'SEO Title' },
+  { type: 'longText', id: 'seoDescription', label: 'SEO Description' },
+], 'title')
+
 // Leads table for form submissions
 await seedTable('leads', 'Leads', 'Lead', [
   { type: 'text', id: 'name', label: 'Full Name', required: true },
@@ -427,8 +447,8 @@ await upsertRow('pages', 'home', {
   body: { nodes, rootNodeId: homeRoot },
   seoTitle: 'Kitchen Remodeling & Granite Countertops | Worcester MA',
   seoDescription: 'Family-owned kitchen and bath remodeling. Free estimates, lifetime warranty.',
-  templateEnabled: false,
-}, 'page Homepage')
+  templateEnabled: true, templateTarget: { kind: 'everywhere' }, templatePriority: 90,
+}, 'page Homepage (template)')
 
 resetNodes()
 const contactRoot = ctn('contact-root', ['title', 'form-ref'])
@@ -438,8 +458,8 @@ await upsertRow('pages', 'contact', {
   title: 'Contact — Get Your Free Estimate', slug: 'contact',
   body: { nodes, rootNodeId: contactRoot },
   seoTitle: 'Contact Granite Brothers | Free Estimates',
-  templateEnabled: false,
-}, 'page Contact')
+  templateEnabled: true, templateTarget: { kind: 'everywhere' }, templatePriority: 80,
+}, 'page Contact/Lead (template)')
 
 resetNodes()
 const aboutRoot = ctn('about-root', ['title', 'p1', 'p2', 'features-ref'])
@@ -450,7 +470,7 @@ n('features-ref', 'base.visual-component-ref', { componentId: componentIds['feat
 await upsertRow('pages', 'about', {
   title: 'About Us — Granite Brothers', slug: 'about',
   body: { nodes, rootNodeId: aboutRoot },
-  templateEnabled: false,
+  templateEnabled: true, templateTarget: { kind: 'everywhere' }, templatePriority: 70,
 }, 'page About')
 
 // 5. Demo entries (fully filled per plan Phase 1)
@@ -472,6 +492,18 @@ await upsertRow('cities', 'worcester', {
   seoTitle: 'Kitchen Remodeling Worcester MA | Granite Brothers',
   seoDescription: 'Worcester kitchen remodeling and granite countertops from a local, licensed crew. Free estimates.',
 }, 'demo city Worcester')
+
+// Demo blog post
+await upsertRow('posts', 'why-granite-countertops', {
+  title: 'Why Granite Countertops Are the Smart Choice for Your Kitchen', slug: 'why-granite-countertops',
+  body: '<p>Granite has been the gold standard for kitchen countertops for decades — and for good reason. When you choose granite, you\'re investing in a surface that combines timeless beauty with unmatched durability.</p><h2>Natural Beauty, Every Slab Unique</h2><p>No two granite slabs are identical. Each piece tells a geological story millions of years in the making, with distinctive veining, speckling, and color variations that engineered stone simply cannot replicate. Our Sturbridge yard carries over 400 slabs so you can hand-pick the exact look for your kitchen.</p><h2>Heat & Scratch Resistance</h2><p>Hot pots straight from the stove? No problem. Granite handles temperatures up to 1,200°F without scorching or cracking. It\'s also highly scratch-resistant — knives won\'t leave marks, though we still recommend using a cutting board to protect your blades.</p><h2>Lifetime Value</h2><p>Properly sealed granite countertops last 50+ years. Our fabrication includes a 15-year sealer that repels stains from wine, oil, and acidic foods. Routine care is simple: wipe with mild soap and water, reseal every few years.</p><h2>Boosts Home Value</h2><p>Kitchen remodels with granite countertops consistently return 70–80% of cost at resale. Buyers in Greater Worcester recognize quality — they know Granite Brothers work when they see it.</p>',
+  featuredImage: null,
+  excerpt: 'Granite countertops offer unmatched durability, natural beauty, and lifetime value. Learn why they\'re the smart choice for your Worcester kitchen remodel.',
+  author: 'Granite Brothers',
+  publishedAt: '2026-09-15',
+  seoTitle: 'Why Granite Countertops Are the Smart Choice | Granite Brothers',
+  seoDescription: 'Discover why granite countertops are the best investment for your kitchen — heat resistant, scratch proof, unique natural beauty, and 50+ year lifespan.',
+}, 'demo blog post')
 
 console.log('\n✅ Done. All rows upserted and published.')
 process.exit(0)
