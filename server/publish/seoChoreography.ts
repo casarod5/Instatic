@@ -130,13 +130,25 @@ async function buildBlogFeedConfig(
   // Respect the admin toggle before doing any DB work.
   if (settings.enableRssFeed === false) return { enabled: false, siteUrl: '', feedUrl: '', description: '', items: [] }
 
+  // A missing posts table or zero published posts is NOT a disabled feed:
+  // bake a valid EMPTY feed so subscribers can poll without 404s — the
+  // same contract the /feed.xml route documents, and what seoArtifacts'
+  // "emit a valid (possibly empty) feed" gate expects.
+  const emptyFeed = {
+    enabled: true,
+    siteUrl,
+    feedUrl: `${siteUrl.replace(/\/+$/, '')}/feed.xml`,
+    description: '',
+    items: [] as NonNullable<SeoBakeInput['blogFeed']>['items'],
+  }
+
   const tables = await listDataTables(db, MAIN_SCOPE)
   const postsTable = tables.find((t) => t.slug === 'posts' || t.id === 'posts')
-  if (!postsTable) return { enabled: false, siteUrl: '', feedUrl: '', description: '', items: [] }
+  if (!postsTable) return emptyFeed
 
   // Published rows only (see buildSeoBakeInput note).
   const rows = (await listDataRows(db, MAIN_SCOPE, postsTable.id)).filter((row) => row.publishedAt != null)
-  if (rows.length === 0) return { enabled: false, siteUrl: '', feedUrl: '', description: '', items: [] }
+  if (rows.length === 0) return emptyFeed
 
   const now = new Date().toISOString()
 

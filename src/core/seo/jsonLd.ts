@@ -146,6 +146,11 @@ export function buildBreadcrumbJsonLd(
   const items: BreadcrumbItem[] = [{ name: 'Home', url: `${homeUrl}/` }, ...stack]
   const valid = items.filter((item) => item.name && item.url)
   if (valid.length === 0) return null
+  // Breadcrumb item URLs must be absolute — Google's BreadcrumbList docs
+  // resolve `item` as a URL, and the stack builder emits route-relative
+  // paths (e.g. "/cities") for intermediate crumbs.
+  const absoluteUrl = (url: string) =>
+    /^https?:\/\//i.test(url) ? url : `${homeUrl}${url.startsWith('/') ? '' : '/'}${url}`
   return {
     '@context': 'https://schema.org',
     '@type': 'BreadcrumbList',
@@ -153,7 +158,7 @@ export function buildBreadcrumbJsonLd(
       '@type': 'ListItem',
       position: index + 1,
       name: item.name,
-      item: item.url,
+      item: absoluteUrl(item.url),
     })),
   }
 }
