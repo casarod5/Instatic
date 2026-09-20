@@ -28,7 +28,6 @@ import { handleModuleJsAssetRequest, isModuleJsAssetPath } from './handlers/cms/
 import { handlePublicFormRequest } from './forms/handler'
 import { jsonResponse } from './http'
 import { isRuntimePackagePath, tryServeRuntimePackage } from './publish/runtime/packageServer'
-import { jsonResponse } from './http'
 import { binaryResponse, toArrayBuffer } from './binary'
 import { hardenUploadResponse, serveAdminApp, serveStaticFile } from './static'
 import { registry } from '@core/module-engine'
