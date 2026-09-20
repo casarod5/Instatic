@@ -1359,4 +1359,81 @@ export const pgMigrations: Migration[] = [
     id: '030_iso_timestamps',
     sql: 'select 1',
   },
+  {
+    // Phase 1.5 — SEO & redirects pack (GRAAAAA-69, plan D7).
+    //
+    //   site_redirects          — site-level 301 manager. Independent of the
+    //                              existing `data_row_redirects` (which only
+    //                              tracks slug-rename history for content
+    //                              rows). Manual CSV import + admin UI land
+    //                              on this table.
+    //   site.seo_settings_json  — site-wide defaults the publisher consults
+    //                              before falling back to per-page overrides:
+    //                                siteUrl, defaultOgImage, robotsTxt,
+    //                                publisherIdentity (NAP for LocalBusiness
+    //                                JSON-LD), sitemap additional paths.
+    //   data_tables.postType     — seed SEO/OG/social fields into the system
+    //                              post types so any post type built on the
+    //                              starter inherits the SEO surface.
+    id: '031_phase_1_5_seo_and_redirects',
+    sql: `
+      create table if not exists site_redirects (
+        id text primary key,
+        from_path text not null,
+        target_path text not null,
+        status_code integer not null default 301,
+        is_regex integer not null default 0,
+        enabled integer not null default 1,
+        source text not null default 'manual',
+        note text not null default '',
+        hit_count bigint not null default 0,
+        last_hit_at timestamptz,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      );
+
+      create unique index if not exists site_redirects_from_path_enabled_idx
+        on site_redirects (from_path)
+        where enabled = 1;
+
+      create index if not exists site_redirects_hit_count_idx
+        on site_redirects (hit_count desc);
+
+      alter table site
+        add column if not exists seo_settings_json jsonb not null default '{}'::jsonb;
+
+      alter table site
+        add column if not exists publisher_identity_json jsonb not null default '{}'::jsonb;
+
+      alter table site
+        add column if not exists sitemap_extra_paths_json jsonb not null default '[]'::jsonb;
+
+      alter table site
+        add column if not exists robots_txt text not null default '';
+
+      -- Append SEO / OG / Twitter fields to the posts and pages system
+      -- post types when they are missing, so every entry gets the full SEO
+      -- surface from the next read. We touch the JSON columns directly here
+      -- rather than rewriting the fields_json array wholesale, so user-authored
+      -- custom field additions are preserved.
+      update data_tables
+        set fields_json = fields_json ||
+          '[
+            {"type":"image","id":"ogImage","label":"Social share image","builtIn":true},
+            {"type":"text","id":"twitterCard","label":"Twitter card","builtIn":true,"defaultValue":"summary_large_image"},
+            {"type":"url","id":"canonicalUrl","label":"Canonical URL override","builtIn":true},
+            {"type":"number","id":"schemaPriority","label":"Sitemap priority (0..1)","builtIn":true,"defaultValue":0.5},
+            {"type":"text","id":"schemaChangeFreq","label":"Sitemap changefreq","builtIn":true,"defaultValue":"weekly"},
+            {"type":"boolean","id":"noindex","label":"Hide from search engines","builtIn":true,"defaultValue":false},
+            {"type":"boolean","id":"excludeFromSitemap","label":"Exclude from sitemap","builtIn":true,"defaultValue":false}
+          ]'::jsonb,
+          updated_at = now()
+        where slug in ('posts', 'pages')
+          and not exists (
+            select 1
+            from jsonb_array_elements(fields_json) as f
+            where f->>'id' = 'ogImage'
+          );
+    `,
+  },
 ]

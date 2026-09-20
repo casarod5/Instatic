@@ -53,6 +53,7 @@ import { handlePluginsRoutes } from './plugins'
 import { handleDataRoutes } from './data'
 import { handleDashboardRoutes } from './dashboard'
 import { handleFontsRoutes } from './fonts'
+import { handleSeoRoutes } from './seo'
 import { handlePublishRoutes } from './publish'
 import { handleExportRoute } from './export'
 import { handleImportPreviewRoute } from './importPreview'
@@ -136,6 +137,10 @@ export async function handleCmsRequest(
     // under `/data/...` can never accidentally shadow it.
     ?? (await handleDashboardRoutes(req, db, options))
     ?? (await handleFontsRoutes(req, db, options))
+    // SEO admin surface (redirects, settings, robots) — live-site only, no
+    // branch scope. Registered before publish: `/seo/*` paths are distinct,
+    // so order is purely for readability.
+    ?? (await handleSeoRoutes(req, db))
     ?? (await handlePublishRoutes(req, db, scope, options))
     // Export and import are registered after data routes so their exact paths
     // `/export` and `/import` cannot conflict with any `/data/...` sub-routes.
