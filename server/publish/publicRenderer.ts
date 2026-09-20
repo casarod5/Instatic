@@ -76,6 +76,13 @@ interface RenderPublishedSnapshotContext {
    * a stale version and the hole endpoint would refuse to hydrate it.
    */
   publishVersion?: number
+  /**
+   * Absolute URL of the site's RSS feed (Phase 1.5). Threaded into the
+   * entry render's `documentMeta` so baked pages carry the
+   * `<link rel="alternate" type="application/rss+xml">` discovery tag.
+   * Unset when the feed is disabled or no siteUrl is configured.
+   */
+  rssFeedUrl?: string
 }
 
 /**
@@ -196,12 +203,13 @@ export async function renderPublishedDataRowTemplate(
     ...(ctx.url ? { route: buildRouteFrame(ctx.url.toString()) } : {}),
   }
 
-  const rendered = await renderMergedTemplate(
-    merged,
-    snapshot,
-    templateContext,
-    ctx,
-    readEntrySeoOverride(row.cells),
-  )
+  const entryMeta = readEntrySeoOverride(row.cells, { rssFeedUrl: ctx.rssFeedUrl })
+  const documentMeta: DocumentMetaOverride = {
+    ...(entryMeta ?? {}),
+    // Blog posts are articles; other content tables (services, locations)
+    // stay `website`. This is the only data-row render path.
+    ogType: row.tableSlug === 'posts' ? 'article' : 'website',
+  }
+  const rendered = await renderMergedTemplate(merged, snapshot, templateContext, ctx, documentMeta)
   return { ...rendered, pageId: merged.id, slug: merged.slug, siteId: snapshot.site.id }
 }

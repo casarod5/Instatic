@@ -44,6 +44,12 @@ export const SiteSettingsSchema = Type.Object({
   fonts: Type.Optional(SiteFontsSettingsSchema),
   /** Keyboard shortcut overrides — defaults to {} — handled in parseSiteSettings. */
   shortcuts: Type.Record(Type.String(), Type.String()),
+  /**
+   * Phase 1.5 (GRAAAAA-87): emit the RSS 2.0 blog feed at `/feed.xml` and
+   * advertise it via a `<link rel="alternate">` discovery tag on every page.
+   * Default true; admin toggle lives in the Publishing section of Settings.
+   */
+  enableRssFeed: Type.Boolean({ default: true }),
 })
 
 export type SiteSettings = Static<typeof SiteSettingsSchema>
@@ -54,6 +60,7 @@ export type SiteSettings = Static<typeof SiteSettingsSchema>
 
 export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   shortcuts: {},
+  enableRssFeed: true,
 }
 
 // ---------------------------------------------------------------------------
@@ -94,5 +101,6 @@ export function parseSiteSettings(raw: unknown): SiteSettings {
     framework,
     fonts,
     shortcuts,
+    enableRssFeed: typeof r.enableRssFeed === 'boolean' ? r.enableRssFeed : true,
   }
 }

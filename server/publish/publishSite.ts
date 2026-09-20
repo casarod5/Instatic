@@ -54,6 +54,11 @@ import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publis
 import { runPublishFlush } from './publishFlush'
 import { sweepStalePluginVersionAssets } from './stalePluginAssets'
 import { MAIN_SCOPE } from '../branches/scope'
+import { loadSiteSeoContext } from '@core/seo/seoSettings'
+import { getSiteSeoSettings } from '../repositories/seo'
+import { buildSeoBakeInput, runPublishChoreography } from './seoChoreography'
+import { bakeSeoArtifacts } from './seoArtifacts'
+import { nowIso } from '@core/utils/isoDate'
 
 interface PublishResult {
   publishedPages: number
@@ -213,6 +218,25 @@ async function publishDraftSiteLocked(
   // swap) so their `<instatic-hole data-instatic-version>` matches what the hole endpoint
   // expects; otherwise every baked hole would be rejected as stale.
   const nextPublishVersion = getPublishVersion() + 1
+  // Resolve the RSS feed discovery URL once per publish — every baked page
+  // gets the same `<link rel="alternate" type="application/rss+xml">` head
+  // tag pointing at the canonical /feed.xml. Skip when the admin toggle is
+  // off or the site has no canonical host configured.
+  // Phase 1.5 GRAAAAA-87: source of truth is `site.settings.enableRssFeed`
+  // (admin-editable via Publishing section).
+  let rssFeedUrl: string | undefined
+  try {
+    const siteSeoSettings = await getSiteSeoSettings(db)
+    const siteEnableRssFeed = site.settings.enableRssFeed !== false
+    if (siteEnableRssFeed && siteSeoSettings.siteUrl) {
+      rssFeedUrl = `${siteSeoSettings.siteUrl.replace(/\/+$/, '')}/feed.xml`
+    }
+  } catch {
+    rssFeedUrl = undefined
+  }
+  // SEO artefact bake result — read after the publish for the choreography.
+  let seoResult: Awaited<ReturnType<typeof bakeSeoArtifacts>> | null = null
+
   if (uploadsDir) {
     try {
       const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
@@ -279,6 +303,7 @@ async function publishDraftSiteLocked(
             db,
             url: syntheticUrl,
             publishVersion: nextPublishVersion,
+            rssFeedUrl,
           })
           const html = await applyPublishedHtmlPipeline(rendered, db)
           await writeArtefact(slotDir, urlPath, html)
@@ -294,12 +319,34 @@ async function publishDraftSiteLocked(
       // template bakes into the same slot. Without this the slot swap would
       // strand every previously-baked row artefact in the inactive slot and
       // ALL row routes would fall to the live renderer after a full publish.
-      const rowBake = await bakePublishedDataRowArtefacts(db, slotDir, nextPublishVersion)
+      const rowBake = await bakePublishedDataRowArtefacts(db, slotDir, nextPublishVersion, rssFeedUrl)
       for (const cssBundle of rowBake.cssBundles) collectCssFiles(cssBundle)
 
       for (const [publicPath, bytes] of assetsByPath) {
         await writeStaticAsset(slotDir, publicPath, bytes)
       }
+
+      // Phase 1.5 (GRAAAAA-69): SEO artefacts — sitemap.xml / robots.txt /
+      // feed.xml (+ rss.xml alias) / .well-known/redirects.json — baked into
+      // the INACTIVE slot before the swap so they go live atomically with the
+      // rest of the publish. A failure skips only these files; the live
+      // /sitemap.xml (etc.) routes still serve from the DB.
+      try {
+        const siteSeoContext = await loadSiteSeoContext(db)
+        seoResult = await bakeSeoArtifacts(
+          await buildSeoBakeInput({
+            db,
+            slotDir,
+            site: publishedSite,
+            snapshots,
+            siteSeoContext,
+            publishedAt: nowIso(),
+          }),
+        )
+      } catch (err) {
+        console.error('[publish:site] SEO artefact bake failed (live SEO routes remain active):', err)
+      }
+
       await swapSlot(uploadsDir, slot)
     } catch (err) {
       console.error('[publish:site] static artefact write failed (live renderer remains active):', err)
@@ -324,6 +371,24 @@ async function publishDraftSiteLocked(
   // window where the freshly-swapped shells (stamped nextPublishVersion) are
   // live while the version counter still reads the old value.
   bumpPublishVersion()
+
+
+  // Phase 1.5 (GRAAAAA-69, plan D7): publish choreography — Cloudflare zone
+  // purge + search-engine sitemap ping + audit entry, fired AFTER the slot
+  // swap so purged edges re-fetch the freshly swapped artefacts. Fire-and-
+  // forget: a publish that reached bumpPublishVersion is already user-visible;
+  // a choreography failure is audit-logged, never surfaced as a publish
+  // error. Without Cloudflare credentials the purge step records its skip
+  // (dry-run) in the audit entry instead of calling the CF API.
+  const seoSettings = await getSiteSeoSettings(db)
+  const choreographySiteUrl = seoSettings.siteUrl.replace(/\/+$/, '')
+  void runPublishChoreography({
+    db,
+    siteUrl: choreographySiteUrl,
+    sitemapUrl: choreographySiteUrl ? `${choreographySiteUrl}/sitemap.xml` : undefined,
+    redirectCount: seoResult?.redirectCount ?? 0,
+    publishedBy: adminUserId,
+  })
 
   return { publishedPages }
 }

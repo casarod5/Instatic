@@ -152,15 +152,20 @@ export function readSeoDescriptionCell(cells: DataRowCells): string {
  * This deliberately never writes to `page.title`: that also feeds the
  * `{page.title}` binding, which must keep rendering the entry's real title.
  */
-export function readEntrySeoOverride(cells: DataRowCells): {
+export function readEntrySeoOverride(
+  cells: DataRowCells,
+  options: { rssFeedUrl?: string } = {},
+): {
   title?: string
   description?: string
+  rssFeedUrl?: string
 } {
   const title = readSeoTitleCell(cells).trim()
   const description = readSeoDescriptionCell(cells).trim()
   return {
     ...(title ? { title } : {}),
     ...(description ? { description } : {}),
+    ...(options.rssFeedUrl ? { rssFeedUrl: options.rssFeedUrl } : {}),
   }
 }
 

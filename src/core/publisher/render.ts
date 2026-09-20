@@ -171,10 +171,43 @@ interface PublishPageOptions {
 /**
  * `<head>` values supplied by the caller for this render only. An omitted
  * (or blank) key falls through to the site settings.
+ *
+ * Phase 1.5 (GRAAAAA-69, plan D7) extends the override with the full SEO
+ * surface: OpenGraph, Twitter card, canonical URL, noindex, sitemap
+ * directives, and optional JSON-LD blobs the render splices into `<head>`
+ * before assembling the document. Resolution still falls through to the
+ * site settings — the publisher carries the full chain (cell → template
+ * default → site settings).
  */
 export interface DocumentMetaOverride {
   title?: string
   description?: string
+  canonicalUrl?: string
+  ogTitle?: string
+  ogDescription?: string
+  ogImage?: string | null
+  ogType?: string
+  twitterCard?: string
+  twitterImage?: string | null
+  noindex?: boolean
+  excludeFromSitemap?: boolean
+  schemaPriority?: number
+  schemaChangeFreq?: string
+  /**
+   * Absolute URL of the site's RSS 2.0 blog feed. When set, the head emit
+   * includes a `<link rel="alternate" type="application/rss+xml">` discovery
+   * tag so feed readers and aggregators can pick up the feed automatically.
+   * Phase 1.5 GRAAAAA-87 — leave unset to omit the tag (e.g. when the admin
+   * toggle is off or no `siteUrl` is configured).
+   */
+  rssFeedUrl?: string
+  /**
+   * JSON-LD blobs to inject into `<head>`. The publisher wraps each in a
+   * `<script type="application/ld+json">` tag — callers should pass the
+   * payload itself (object), not a pre-serialised string. Multiple payloads
+   * are emitted in array order, LocalBusiness first.
+   */
+  jsonLd?: unknown[]
 }
 
 /**
@@ -381,6 +414,102 @@ function buildDocumentMetaTags(
 }
 
 /**
+ * Build the Phase 1.5 SEO head block — OpenGraph, Twitter, canonical,
+ * robots directives, JSON-LD. The DocumentMetaOverride carries the resolved
+ * SEO surface; `site` and `page` provide the fallbacks for OG type and the
+ * default robots policy.
+ *
+ * Token interpolation (`{currentEntry.name}`, etc.) happens here too so
+ * per-entry OG titles can mirror the rendered `<title>`. URLs are validated
+ * by `isSafeUrl` so an editor cannot inject `javascript:` via OG fields.
+ *
+ * The returned string is meant to be spliced into `<head>` immediately
+ * after `<title>` / `<meta name="description">` and before any plugin
+ * frontend assets, so the document's head still passes strict
+ * Rich-Results and OpenGraph validators.
+ */
+function buildSeoHeadTags(
+  site: SiteDocument,
+  override: DocumentMetaOverride = {},
+): string {
+  const parts: string[] = []
+
+  // Canonical — per-page override wins; otherwise synthesise from site URL
+  // + page slug. The publisher never auto-sets an absolute URL when the
+  // site has no canonical host configured (it'd emit `null/...` which
+  // validators reject); it stays empty and the consumer chooses.
+  const canonical = override.canonicalUrl
+  if (canonical && isSafeUrl(canonical)) {
+    parts.push(`  <link rel="canonical" href="${escapeHtml(canonical)}">`)
+  }
+
+  // OpenGraph
+  const ogTitle = override.ogTitle ?? override.title
+  const ogDescription = override.ogDescription ?? override.description
+  const ogType = override.ogType ?? 'website'
+  if (ogTitle) {
+    parts.push(`  <meta property="og:title" content="${escapeHtml(ogTitle)}">`)
+  }
+  if (ogDescription) {
+    parts.push(`  <meta property="og:description" content="${escapeHtml(ogDescription)}">`)
+  }
+  parts.push(`  <meta property="og:type" content="${escapeHtml(ogType)}">`)
+  if (canonical && isSafeUrl(canonical)) {
+    parts.push(`  <meta property="og:url" content="${escapeHtml(canonical)}">`)
+  }
+  if (override.ogImage && isSafeUrl(override.ogImage)) {
+    parts.push(`  <meta property="og:image" content="${escapeHtml(override.ogImage)}">`)
+  }
+  parts.push(`  <meta property="og:site_name" content="${escapeHtml(site.name)}">`)
+
+  // Twitter
+  const twitterCard = override.twitterCard ?? 'summary_large_image'
+  parts.push(`  <meta name="twitter:card" content="${escapeHtml(twitterCard)}">`)
+  if (override.twitterImage && isSafeUrl(override.twitterImage)) {
+    parts.push(`  <meta name="twitter:image" content="${escapeHtml(override.twitterImage)}">`)
+  }
+  if (ogTitle) {
+    parts.push(`  <meta name="twitter:title" content="${escapeHtml(ogTitle)}">`)
+  }
+  if (ogDescription) {
+    parts.push(`  <meta name="twitter:description" content="${escapeHtml(ogDescription)}">`)
+  }
+
+  // robots — only emit when an entry explicitly opts in (noindex) or when
+  // a per-page canonical override is in play. Default index/follow is
+  // implicit (search engines infer it), so we never emit a noisy default.
+  if (override.noindex === true) {
+    parts.push(`  <meta name="robots" content="noindex, nofollow">`)
+  }
+
+  // RSS feed discovery (Phase 1.5 GRAAAAA-87). Advertises the feed in
+  // <head> on every page so feed readers and aggregators can pick it up
+  // automatically. Only emitted when the publisher passes an absolute
+  // feed URL — the URL is generated from the site URL + the admin
+  // toggle, so an absent value here means "feed disabled or siteUrl
+  // unconfigured".
+  if (override.rssFeedUrl && isSafeUrl(override.rssFeedUrl)) {
+    parts.push(`  <link rel="alternate" type="application/rss+xml" href="${escapeHtml(override.rssFeedUrl)}" title="${escapeHtml(site.name)} — RSS">`)
+  }
+
+  // JSON-LD blocks — LocalBusiness / Service / FAQ / BreadcrumbList, in
+  // that order. Multiple payloads are emitted back-to-back, each in its
+  // own <script> tag so validator parsers can attribute each schema
+  // independently.
+  if (override.jsonLd && override.jsonLd.length > 0) {
+    for (const payload of override.jsonLd) {
+      if (payload && typeof payload === 'object') {
+        const json = JSON.stringify(payload).replace(/<\/script/gi, '<\\/script')
+        parts.push(`  <script type="application/ld+json">${json}</script>`)
+      }
+    }
+  }
+
+  if (parts.length === 0) return ''
+  return parts.join('\n') + '\n'
+}
+
+/**
  * Runtime / importmap / loop-runtime `<script>` tags + the flags the CSP
  * builder needs. Centralising every "do we need a script tag?" branch in
  * one place keeps publishPage straight-line and makes adding a new
@@ -499,6 +628,13 @@ interface AssembledDocumentParts {
   bodyHtml: string
   bodyEndRuntimeScripts: string
   loopRuntimeScript: string
+  /**
+   * Phase 1.5 (GRAAAAA-69, plan D7) SEO pack. The renderer assembles a
+   * single string carrying OpenGraph / Twitter / canonical / robots
+   * meta tags + JSON-LD blocks. Empty string means "no extra meta" and
+   * the assembler omits the surrounding `<head>` line.
+   */
+  seoHeadHtml: string
 }
 
 function assembleHtmlDocument(parts: AssembledDocumentParts): string {
@@ -513,6 +649,7 @@ function assembleHtmlDocument(parts: AssembledDocumentParts): string {
     lineOrEmpty(parts.importmapTag) +
     lineOrEmpty(parts.headRuntimeScripts) +
     lineOrEmpty(parts.holeRuntimeScript) +
+    lineOrEmpty(parts.seoHeadHtml) +
     `</head>\n` +
     `${parts.bodyOpenTag}\n` +
     `${parts.bodyHtml}\n` +
@@ -613,6 +750,7 @@ export function publishPage(
   )
 
   const meta = buildDocumentMetaTags(site, page, templateContext, options.documentMeta)
+  const seoHead = buildSeoHeadTags(site, options.documentMeta)
   const runtime = buildRuntimeAssetsBlock(options, acc)
   const csp = buildContentSecurityPolicy(runtime.anyScriptTag, runtime.importmap, acc.cspSources)
 
@@ -630,6 +768,7 @@ export function publishPage(
     bodyHtml,
     bodyEndRuntimeScripts: runtime.bodyEndRuntimeScripts,
     loopRuntimeScript: runtime.loopRuntimeScript,
+    seoHeadHtml: seoHead,
   })
 
   return {

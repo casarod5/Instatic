@@ -64,6 +64,7 @@ export async function bakePublishedDataRowArtefacts(
   db: DbClient,
   slotDir: string,
   publishVersion: number,
+  rssFeedUrl?: string,
 ): Promise<DataRowBakeResult> {
   const result: DataRowBakeResult = { baked: 0, cssBundles: [] }
 
@@ -99,6 +100,7 @@ export async function bakePublishedDataRowArtefacts(
         db,
         url: syntheticUrl,
         publishVersion,
+        rssFeedUrl,
       })
       if (!rendered) continue
       const html = await applyPublishedHtmlPipeline(rendered, db)

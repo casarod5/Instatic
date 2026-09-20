@@ -329,6 +329,22 @@
   font-family: var(--font-mono);
 }
 
+/* ── PublishingSection → RSS feed ─────────────────────────────────────────── */
+.pubFeedUrl {
+  display: inline-block;
+  padding: var(--space-xs) var(--space-s);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: var(--text-m);
+  color: var(--text-bright);
+  user-select: all;
+  max-width: 220px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
 /* ── GeneralSection ───────────────────────────────────────────────────────── */
 .genFieldRow {
   margin-bottom: var(--space-2xl);
