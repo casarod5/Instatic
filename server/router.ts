@@ -26,6 +26,7 @@ import { handleLoopRequest, isLoopRuntimeAssetPath, serveLoopRuntimeAsset } from
 import { handleHoleRequest, isHoleRuntimeAssetPath, serveHoleRuntimeAsset } from './handlers/cms/hole'
 import { handleModuleJsAssetRequest, isModuleJsAssetPath } from './handlers/cms/moduleJs'
 import { handlePublicFormRequest } from './forms/handler'
+import { handleFormSubmit } from './forms/leadForward'
 import { jsonResponse } from './http'
 import { isRuntimePackagePath, tryServeRuntimePackage } from './publish/runtime/packageServer'
 import { binaryResponse, toArrayBuffer } from './binary'
@@ -242,12 +243,13 @@ function tryServePublicForm(req: Request, runtime: ServerRuntime, url: URL, path
   return handlePublicFormRequest(req, runtime.db, url)
 }
 
-function tryServeFormSubmit(req: Request, _runtime: ServerRuntime, _url: URL, pathname: string): Response | null {
+function tryServeFormSubmit(req: Request, _runtime: ServerRuntime, _url: URL, pathname: string): Promise<Response> | null {
   if (pathname !== '/api/forms/submit') return null
   if (req.method !== 'POST') return null
-  // Stub endpoint — accepts form submissions and returns 202 Accepted
-  // In Phase 2 this will forward to the granitecrm-platform lead ingest
-  return jsonResponse({ accepted: true }, { status: 202 })
+  // WebCanvas P5 (GRAAAAA-66): forwards to the granitecrm-platform lead bridge
+  // (POST /api/webcanvas/forms) when LEAD_FORWARD_URL/LEAD_FORWARD_SECRET are
+  // set; keeps the upstream accept-and-acknowledge 202 stub otherwise.
+  return handleFormSubmit(req)
 }
 
 async function tryServeRuntimeAsset(req: Request, runtime: ServerRuntime, _url: URL, pathname: string): Promise<Response | null> {

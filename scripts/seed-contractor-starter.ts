@@ -16,7 +16,9 @@ import { createDataRow } from '../server/repositories/data/rows/mutations.ts'
 import { persistDataRowPublish } from '../server/repositories/data/publish.ts'
 import { nanoid } from 'nanoid'
 
-const { db } = createDbClient('sqlite:./.tmp/dev.db')
+// SEED_DATABASE_URL: override the target DB (e.g. sqlite:./.tmp/kita-staging.db)
+// for a fleet-duplicator clone instead of the local dev DB.
+const { db } = createDbClient(process.env.SEED_DATABASE_URL ?? 'sqlite:./.tmp/dev.db')
 
 // ---------------------------------------------------------------- helpers --
 type Node = { id: string; moduleId: string; props: Record<string, unknown>; breakpointOverrides: Record<string, Record<string, unknown>>; children: string[] }
@@ -33,10 +35,12 @@ const img = (id: string, src: string, alt: string) => n(id, 'base.image', { src,
 function tree(rootId: string) { return { nodes: structuredClone(nodes), rootNodeId: rootId } }
 function resetNodes() { for (const k of Object.keys(nodes)) delete nodes[k] }
 
+// Brand design tokens — override via SEED_BRAND_* env to clone the starter
+// for another contractor brand (fleet duplicator, GRAAAAA-66).
 const BRAND = {
-  primary: '#c2410c', primaryDark: '#7c2d12', ink: '#1c1917', muted: '#57534e',
-  surface: '#fafaf9', accent: '#f59e0b', light: '#fff7ed',
-  fontHeading: 'Georgia, serif', fontBody: 'system-ui, sans-serif',
+  primary: process.env.SEED_BRAND_PRIMARY ?? '#c2410c', primaryDark: process.env.SEED_BRAND_PRIMARY_DARK ?? '#7c2d12', ink: process.env.SEED_BRAND_INK ?? '#1c1917', muted: process.env.SEED_BRAND_MUTED ?? '#57534e',
+  surface: process.env.SEED_BRAND_SURFACE ?? '#fafaf9', accent: process.env.SEED_BRAND_ACCENT ?? '#f59e0b', light: process.env.SEED_BRAND_LIGHT ?? '#fff7ed',
+  fontHeading: process.env.SEED_BRAND_FONT_HEADING ?? 'Georgia, serif', fontBody: process.env.SEED_BRAND_FONT_BODY ?? 'system-ui, sans-serif',
 }
 
 function tokensNode(): string {
@@ -218,7 +222,7 @@ function leadFormCells(componentIds: Record<string, string>) {
       { id: nanoid(), name: 'subtitle', type: 'string', defaultValue: 'Tell us about your project — we respond within one business day.', required: false },
       { id: nanoid(), name: 'submitText', type: 'string', defaultValue: 'Send My Request', required: false },
       { id: nanoid(), name: 'serviceOptions', type: 'string', defaultValue: 'Kitchen Remodeling,Granite Countertops,Home Addition,Other', required: false, description: 'Comma-separated dropdown options' },
-      { id: nanoid(), name: 'webhookUrl', type: 'url', defaultValue: '/api/forms/submit', required: false, description: 'WEBHOOK STUB — Phase 2 points this at the granitecrm-platform lead ingest' },
+      { id: nanoid(), name: 'webhookUrl', type: 'url', defaultValue: '/api/forms/submit', required: false, description: 'Public form webhook — forwards to the granitecrm-platform lead bridge when LEAD_FORWARD_URL/LEAD_FORWARD_SECRET are set (GRAAAAA-66)' },
       { id: nanoid(), name: 'showPhone', type: 'boolean', defaultValue: true, required: false },
     ],
     classIds: [],
