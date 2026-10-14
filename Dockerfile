@@ -12,7 +12,11 @@ COPY package.json bun.lock ./
 COPY vendor ./vendor
 RUN bun install --frozen-lockfile
 COPY . .
-RUN bun run build
+# Build vendor/pixel-art-icons/dist/ BEFORE the main build needs it
+RUN bun install @types/bun
+RUN bun install babel-plugin-react-compiler
+RUN cd vendor/pixel-art-icons && ../../node_modules/.bin/tsc -p tsconfig.json
+RUN rm -f node_modules/.tmp/*.tsbuildinfo && bun run build
 
 FROM oven/bun:${BUN_VERSION} AS production-deps
 WORKDIR /app

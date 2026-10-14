@@ -1,3 +1,4 @@
+import { password as _BunPassword } from "bun";
 import { createHash, randomBytes } from 'node:crypto'
 
 export const SESSION_COOKIE_NAME = 'instatic_admin_session'
