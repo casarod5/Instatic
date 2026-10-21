@@ -71,7 +71,7 @@ export function readLeadForwardConfig(req: Request): LeadForwardConfig | null {
   }
 }
 
-const FORWARDABLE_FIELDS = ['name', 'phone', 'email', 'message'] as const
+const FORWARDABLE_FIELDS = ['name', 'phone', 'email', 'message', 'zip'] as const
 
 /**
  * Map a public form payload onto the WebCanvas bridge contract
