@@ -222,7 +222,6 @@ function leadFormCells(componentIds: Record<string, string>) {
       { id: nanoid(), name: 'subtitle', type: 'string', defaultValue: 'Tell us about your project — we respond within one business day.', required: false },
       { id: nanoid(), name: 'submitText', type: 'string', defaultValue: 'Send My Request', required: false },
       { id: nanoid(), name: 'serviceOptions', type: 'string', defaultValue: 'Kitchen Remodeling,Granite Countertops,Home Addition,Other', required: false, description: 'Comma-separated dropdown options' },
-      { id: nanoid(), name: 'webhookUrl', type: 'url', defaultValue: '/api/forms/submit', required: false, description: 'Public form webhook — forwards to the granitecrm-platform lead bridge when LEAD_FORWARD_URL/LEAD_FORWARD_SECRET are set (GRAAAAA-66)' },
       { id: nanoid(), name: 'showPhone', type: 'boolean', defaultValue: true, required: false },
     ],
     classIds: [],

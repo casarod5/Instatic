@@ -1,14 +1,22 @@
 /**
  * WebCanvas P5 (GRAAAAA-66) — form submission → CRM bridge (instatic side).
  *
- * Forwards public form submissions from POST /api/forms/submit to the
- * granitecrm-platform WebCanvas lead bridge (POST /api/webcanvas/forms,
- * GRAAAAA-94): shared-secret auth, { site, formUrl, fields } payload,
- * same LeadCreateInputSchema contract, single dedupe/write path.
+ * Forwards ACCEPTED public form submissions to the granitecrm-platform
+ * WebCanvas lead bridge (POST /api/webcanvas/forms, GRAAAAA-94):
+ * shared-secret auth, { site, formUrl, fields } payload, same
+ * LeadCreateInputSchema contract, single dedupe/write path.
  *
- * Env-gated: when LEAD_FORWARD_URL / LEAD_FORWARD_SECRET are unset this
- * module is inert and the endpoint keeps its upstream accept-and-acknowledge
- * stub behavior, so existing deployments are unchanged.
+ * GRAAAAA-65 blocker 4b: this used to be its own endpoint
+ * (POST /api/forms/submit) wired straight into the router. Nothing in the
+ * published output ever called it — the shipped runtime posts to
+ * POST /_instatic/form/submit — so every real lead bypassed the bridge
+ * entirely. That unauthenticated twin was also a liability: no origin check,
+ * no rate limit, no challenge, so anyone could inject leads into the CRM.
+ * The forward now lives on the validated public-form path in
+ * server/forms/handler.ts and the twin endpoint is deleted.
+ *
+ * Env-gated: when LEAD_FORWARD_URL / LEAD_FORWARD_SECRET are unset the
+ * module is inert and submissions simply stay local.
  *
  * Env:
  * - LEAD_FORWARD_URL       full CRM bridge URL (e.g. http://127.0.0.1:3011/api/webcanvas/forms)
@@ -17,8 +25,6 @@
  * - LEAD_FORWARD_FORM_URL  optional explicit formUrl (falls back to request Origin)
  * - LEAD_FORWARD_TIMEOUT_MS forward timeout (default 5000)
  */
-import { jsonResponse } from '../http'
-
 export interface LeadForwardConfig {
   url: string
   secret: string
@@ -66,17 +72,6 @@ export function readLeadForwardConfig(req: Request): LeadForwardConfig | null {
 }
 
 const FORWARDABLE_FIELDS = ['name', 'phone', 'email', 'message'] as const
-const HONEYPOT_FIELDS = ['website', 'companyWebsite'] as const
-
-/** Honeypot fields filled → silent accept without forwarding (mirrors the CRM bridge). */
-export function honeypotFilled(body: Record<string, unknown>): boolean {
-  const values = submissionValues(body)
-  for (const field of HONEYPOT_FIELDS) {
-    const v = values[field]
-    if (typeof v === 'string' && v.trim() !== '') return true
-  }
-  return false
-}
 
 /**
  * Map a public form payload onto the WebCanvas bridge contract
@@ -149,35 +144,4 @@ export async function forwardLeadToCrm(
   } finally {
     clearTimeout(timer)
   }
-}
-
-/**
- * POST /api/forms/submit handler. Without forward env: the upstream stub
- * (202 {accepted:true}). With forward env: validate, honeypot-drop, forward
- * to the CRM bridge; CRM failures are logged and swallowed behind a 202 so
- * public submitters never see control-plane errors.
- */
-export async function handleFormSubmit(req: Request): Promise<Response> {
-  let body: Record<string, unknown>
-  try {
-    body = (await req.json()) as Record<string, unknown>
-  } catch {
-    return jsonResponse({ accepted: false, error: 'invalid_json' }, { status: 400 })
-  }
-  const config = readLeadForwardConfig(req)
-  if (!config) return jsonResponse({ accepted: true }, { status: 202 })
-  if (honeypotFilled(body)) return jsonResponse({ accepted: true }, { status: 202 })
-  const payload = mapFormToWebcanvasLead(body, config)
-  if (!payload) {
-    return jsonResponse({ accepted: false, error: 'missing_contact_identity' }, { status: 400 })
-  }
-  const result = await forwardLeadToCrm(payload, config)
-  if (!result.forwarded) {
-    console.error(`[leadForward] CRM bridge forward failed (status=${result.crmStatus}): ${result.error}`)
-    return jsonResponse({ accepted: true, forwarded: false }, { status: 202 })
-  }
-  return jsonResponse(
-    { accepted: true, forwarded: true, deduped: result.deduped ?? false, leadId: result.leadId ?? null },
-    { status: 202 },
-  )
 }

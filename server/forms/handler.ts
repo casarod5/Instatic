@@ -20,6 +20,7 @@ import {
   validateFormSubmission,
   type PublishedFormSnapshot,
 } from '@core/forms'
+import { forwardLeadToCrm, mapFormToWebcanvasLead, readLeadForwardConfig } from './leadForward'
 import {
   issuePublicFormChallenge,
   verifyPublicFormPageToken,
@@ -141,7 +142,41 @@ async function handleSubmit(req: Request, db: DbClient): Promise<Response> {
     slug: '',
   })
   await emitContentEntryCreated(db, MAIN_SCOPE, row.id, { kind: 'system' })
-  return jsonResponse({ ok: true, rowId: row.id })
+
+  // GRAAAAA-65 blocker 4b: this endpoint is the one the published runtime
+  // actually calls (POST /_instatic/form/submit), so the CRM bridge forward
+  // has to happen HERE. It previously only existed on the unauthenticated
+  // twin POST /api/forms/submit, which nothing in the published output ever
+  // reached — a submitted lead died on the local `leads` table and never
+  // reached routing/SMS/audit (GRAAAAA-94/95/96). The local row stays the
+  // record of truth; the forward is best-effort and never fails the visitor.
+  const forwarded = await forwardAcceptedLead(req, values)
+  return jsonResponse({ ok: true, rowId: row.id, forwarded })
+}
+
+/**
+ * Best-effort forward of an accepted public-form submission to the CRM bridge.
+ * A CRM outage must not lose the submission or surface a control-plane error
+ * to a visitor who already got their lead stored, so failures are logged and
+ * reported as `forwarded: false` rather than thrown.
+ */
+async function forwardAcceptedLead(req: Request, values: Record<string, unknown>): Promise<boolean> {
+  const config = readLeadForwardConfig(req)
+  if (!config) return false
+  // mapFormToWebcanvasLead returns null when the submission carries no contact
+  // identity (name + phone or email) — the bridge requires one dedupe key, so
+  // there is nothing to forward.
+  const payload = mapFormToWebcanvasLead(values, config)
+  if (!payload) return false
+  const result = await forwardLeadToCrm(payload, config)
+  if (!result.forwarded) {
+    console.error(`[publicForm] CRM bridge forward failed (status=${result.crmStatus}): ${result.error}`)
+    return false
+  }
+  console.log(
+    `[publicForm] lead forwarded to CRM bridge leadId=${result.leadId ?? 'none'} deduped=${result.deduped ?? false} assigned=${result.assigned ?? false}`,
+  )
+  return true
 }
 
 async function readPublicFormBody<T extends TSchema>(
