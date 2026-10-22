@@ -159,6 +159,33 @@ docker compose -f compose.prod.yml -f compose.tls.yml -f compose.build.yml up -d
 
 See [tls-caddy.md](tls-caddy.md) for the Caddy details.
 
+## Forwarding Form Leads to an External CRM Bridge
+
+Public form submissions can be forwarded to an external CRM bridge in addition to being stored locally. The forward is **env-gated** in `server/forms/leadForward.ts`: with `LEAD_FORWARD_URL` or `LEAD_FORWARD_SECRET` unset, `readLeadForwardConfig()` returns `null`, the module is inert, and submissions simply stay local.
+
+Set both in `.env`:
+
+```txt
+LEAD_FORWARD_URL=https://crm.example.com/api/webcanvas/forms
+LEAD_FORWARD_SECRET=replace-with-the-shared-bridge-secret
+```
+
+Three optional keys tune the payload:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `LEAD_FORWARD_SITE` | `other` | `LeadSourceSite` value sent as `site` |
+| `LEAD_FORWARD_FORM_URL` | request `Origin` | Explicit form URL reported to the bridge |
+| `LEAD_FORWARD_TIMEOUT_MS` | `5000` | Forward timeout |
+
+**Reachability caveat.** The app runs inside Docker, so a bridge listening on the Docker host's loopback interface is **not** reachable from the container — `127.0.0.1` inside the container is the container itself. Use a hostname or an address on a shared network. If the forward silently does nothing, verify the bridge is reachable *from inside the container* first:
+
+```sh
+docker compose -f compose.prod.yml exec app sh -c 'wget -qO- "$LEAD_FORWARD_URL"'
+```
+
+`compose.prod.yml` passes these variables into the container with `${VAR:-}` defaults, so the file still loads with an empty `.env` and the unset state stays the default.
+
 ## Operations
 
 Check status:

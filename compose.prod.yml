@@ -31,6 +31,17 @@ services:
       STATIC_DIR: /app/dist
       INSTATIC_SECRET_KEY: ${INSTATIC_SECRET_KEY:-}
       TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
+      # Lead forwarding to an external CRM bridge (server/forms/leadForward.ts).
+      # The forward is env-gated: with LEAD_FORWARD_URL or LEAD_FORWARD_SECRET
+      # unset the module is inert and submissions stay local. Compose only passes
+      # variables listed here, so the keys must be declared for an operator to be
+      # able to turn the forward on at all. `${VAR:-}` (never `${VAR:?}`) keeps the
+      # file loadable with an empty .env — the unset case is the default state.
+      LEAD_FORWARD_URL: ${LEAD_FORWARD_URL:-}
+      LEAD_FORWARD_SECRET: ${LEAD_FORWARD_SECRET:-}
+      LEAD_FORWARD_SITE: ${LEAD_FORWARD_SITE:-}
+      LEAD_FORWARD_FORM_URL: ${LEAD_FORWARD_FORM_URL:-}
+      LEAD_FORWARD_TIMEOUT_MS: ${LEAD_FORWARD_TIMEOUT_MS:-}
     volumes:
       - uploads:/app/uploads
     depends_on:
