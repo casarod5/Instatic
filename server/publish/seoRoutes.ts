@@ -247,7 +247,14 @@ async function collectLivePages(db: DbClient): Promise<LivePageEntry[]> {
     for (const row of rows) {
       const slug = (row.slug ?? '').trim()
       if (!slug || slug === 'notFound') continue
-      entries.push(pageEntryFromCells(slug === 'index' ? '/' : `/${slug}`, row.cells as Record<string, unknown>, row.publishedAt ?? null))
+      const cells = row.cells as Record<string, unknown>
+      // Template pages are entry renderers, not routable URLs. The router
+      // refuses them (publicRouter) and the bake path skips them
+      // (seoChoreography); `cells.templateEnabled` is the stored form of
+      // `page.template.enabled` (see core/data/pageFromRow). Emitting them
+      // here put guaranteed-404 URLs in the sitemap.
+      if (cells.templateEnabled === true) continue
+      entries.push(pageEntryFromCells(slug === 'index' ? '/' : `/${slug}`, cells, row.publishedAt ?? null))
     }
   }
 
